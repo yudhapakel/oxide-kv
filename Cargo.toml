@@ -1,0 +1,12 @@
+[package]
+name = "oxide-kv"
+version = "0.1.0"
+edition = "2024"
+authors = [ "Yudha Harwanto Putra"]
+description = "A lightweight in-memory key-value, store with RESP protocol written in rust"
+
+[dependencies]
+tokio = { version = "1", features = ["full"]}
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
