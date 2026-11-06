@@ -72,6 +72,28 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                             }
                         }
                     }
+                    "DEL" => {
+                        if args.len() < 2 {
+                            Value::Error(
+                                ("wrong number of arguments for 'del' command".to_string()),
+                            )
+                        } else {
+                            let keys = &args[1..];
+                            let deleted = db.del(keys).await;
+                            Value::Integer((deleted))
+                        }
+                    }
+                    "EXISTS" => {
+                        if args.len() < 2 {
+                            Value::Error(
+                                ("wrong number of arguments for 'exists' command".to_string()),
+                            )
+                        } else {
+                            let keys = &args[1..];
+                            let count = db.exists(keys).await;
+                            Value::Integer((count))
+                        }
+                    }
                     _ => Value::Error(format!("unknown command '{}'", cmd)),
                 }
             }

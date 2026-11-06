@@ -25,4 +25,26 @@ impl Db {
         let map = self.entries.read().await;
         map.get(key).cloned()
     }
+
+    pub async fn del(&self, keys: &[String]) -> i64 {
+        let mut map = self.entries.write().await;
+        let mut count = 0;
+        for key in keys {
+            if map.remove(key).is_some() {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    pub async fn exists(&self, keys: &[String]) -> i64 {
+        let map = self.entries.read().await;
+        let mut count = 0;
+        for key in keys {
+            if map.contains_key(key) {
+                count += 1
+            }
+        }
+        count
+    }
 }

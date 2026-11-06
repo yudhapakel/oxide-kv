@@ -4,6 +4,7 @@ pub enum Value {
     Error(String),
     BulkString(String),
     Array(Vec<Value>),
+    Integer(i64),
     Null,
 }
 
@@ -13,6 +14,7 @@ impl Value {
             Value::SimpleString(s) => format!("+{}\r\n", s).into_bytes(),
             Value::Error(msg) => format!("-ERR{}\r\n", msg).into_bytes(),
             Value::BulkString(s) => format!("${}\r\n{}\t\n", s.len(), s).into_bytes(),
+            Value::Integer(n) => format!(":{}\r\n", n).into_bytes(),
             Value::Array(items) => {
                 let mut out = format!("*{}\r\n", items.len()).into_bytes();
                 for item in items {
