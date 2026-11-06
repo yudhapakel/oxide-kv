@@ -1,3 +1,5 @@
+mod resp;
+use resp::{Value, parse_command};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -28,7 +30,24 @@ async fn handle_client(mut socket: TcpStream) -> Result<(), Box<dyn std::error::
             break;
         }
 
-        socket.write_all(&buffer[0..bytes_read]).await?;
+        let response = match parse_command(&buffer[..bytes_read]) {
+            Ok(args) if !args.is_empty() => {
+                let cmd = args[0].to_uppercase();
+                match cmd.as_str() {
+                    "PING" => {
+                        if args.len() > 1 {
+                            Value::BulkString(args[1].clone())
+                        } else {
+                            Value::SimpleString("PONG".to_string())
+                        }
+                    }
+                    _ => Value::Error(format!("unknown command '{}'", cmd)),
+                }
+            }
+            _ => Value::Error("unable to parse command".to_string()),
+        };
+
+        socket.write_all(&response.serialize()).await?;
     }
     Ok(())
 }
