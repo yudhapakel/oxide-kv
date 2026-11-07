@@ -11,16 +11,18 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 
 ## Overview
 
-`oxide-kv` is an educational systems programming project designed to explore low-level asynchronous networking, protocol parsing, thread-safe data structures, and persistent storage mechanisms. It aims to provide a functional subset of Redis commands while serving as a testbed for safe concurrency in Rust.
+`oxide-kv` is an educational systems programming project designed to explore low-level asynchronous networking, protocol parsing, thread-safe data structures, and in-memory storage mechanisms. It implements a core subset of Redis commands, featuring non-blocking I/O, concurrent read-write access via `tokio::sync::RwLock`, atomic arithmetic mutations, and passive key expiration.
 
 ---
 
 ## Features
 
-- **Asynchronous I/O:** Powered by `tokio` for non-blocking TCP network handling and efficient task scheduling.
-- **RESP Protocol Implementation:** Custom serializer and parser supporting standard Redis serialization types (Simple Strings, Errors, Bulk Strings, Arrays, and Null values).
-- **Client Compatibility:** Interoperable with standard clients such as `redis-cli`, network debuggers (`nc`/`telnet`), and Redis language SDKs.
-- **Zero Heavy Abstractions:** Low-overhead protocol parsing operating directly on raw byte buffers.
+- **Asynchronous Network Engine:** Built on `tokio` for efficient, non-blocking TCP connection handling and task scheduling.
+- **RESP Protocol Parser:** Zero-copy byte buffer parser supporting Redis Serialization Protocol primitives (Simple Strings, Errors, Integers, Bulk Strings, and Arrays).
+- **Concurrent Storage:** Thread-safe state managed by `tokio::sync::RwLock<HashMap<String, Entry>>`, enabling safe concurrent reads and serialized writes.
+- **Atomic Operations:** Integer arithmetic (`INCR` and `DECR`) with range validation and RESP-compliant integer replies.
+- **Passive Key Expiration:** Time-To-Live (TTL) tracking with lazy eviction during key access, minimizing CPU overhead while preventing stale reads.
+- **Client Compatibility:** Fully interoperable with standard Redis clients such as `redis-cli`, network utilities (`nc`, `telnet`), and official Redis SDKs.
 
 ---
 
@@ -33,22 +35,23 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
             | (TCP Port 6379)
             v
 +-----------------------+
-|   tokio::net::Tcp     |  <-- Concurrent Connection Acceptance
+|   tokio::net::Tcp     |  <-- Asynchronous Connection Listener
 +-----------+-----------+
-            | (Raw Bytes)
+            | (Raw Stream)
             v
 +-----------------------+
-|     RESP Parser       |  <-- Deserializes RESP Array / Inline Commands
+|     RESP Parser       |  <-- Deserializes Bytes to RESP Value Enum
 +-----------+-----------+
-            | (Value Enum)
+            | (Command Dispatch)
             v
 +-----------------------+
-|    Command Handler    |  <-- Executes In-Memory Operations
+|  Storage Engine (Db)  |  <-- tokio::sync::RwLock<HashMap<String, Entry>>
+|  - Passive Expiration |  <-- Validates expires_at (Instant)
 +-----------+-----------+
-            | (Response)
+            | (Execution Result)
             v
 +-----------------------+
-|    RESP Serializer    |  <-- Writes bytes (+PONG\r\n, $len, etc.)
+|    RESP Serializer    |  <-- Encodes to RESP Frame (+OK, :Int, $Bulk, etc.)
 +-----------------------+
 ```
 
@@ -56,12 +59,17 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 
 ## Supported Commands
 
-- [x] `PING` (inline and RESP bulk format, optional custom message)
-- [ ] `SET <key> <value>`
-- [ ] `GET <key>`
-- [ ] `DEL <key>`
-- [ ] `EXISTS <key>`
-- [ ] `EXPIRE <key> <seconds>`
+| Command | Syntax | Description |
+|---|---|---|
+| **PING** | `PING [message]` | Tests server liveness or echoes back an argument. |
+| **SET** | `SET <key> <value>` | Sets string value for a key. |
+| **GET** | `GET <key>` | Returns string value or nil if not found / expired. |
+| **DEL** | `DEL <key> ...` | Deletes one or more keys; returns deleted count. |
+| **EXISTS** | `EXISTS <key> ...` | Returns count of existing, unexpired keys. |
+| **INCR** | `INCR <key>` | Atomically increments 64-bit signed integer value by 1. |
+| **DECR** | `DECR <key>` | Atomically decrements 64-bit signed integer value by 1. |
+| **EXPIRE** | `EXPIRE <key> <seconds>` | Sets timeout on a key in seconds. |
+| **TTL** | `TTL <key>` | Returns remaining seconds until expiration (-1: persistent, -2: not found). |
 
 ---
 
@@ -83,33 +91,44 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
    ```bash
    cargo run --release
    ```
-   The server will start listening on `127.0.0.1:6379`.
+   The server listens on `127.0.0.1:6379`.
 
-3. Test the connection:
-   Using `redis-cli`:
+3. Test with `redis-cli`:
    ```bash
+   # Basic connectivity
    redis-cli -p 6379 PING
    # Output: PONG
 
-   redis-cli -p 6379 PING "hello world"
-   # Output: "hello world"
-   ```
+   # Key-value operations
+   redis-cli -p 6379 SET user:1 "yudha"
+   # Output: OK
 
-   Using netcat:
-   ```bash
-   nc 127.0.0.1 6379
-   PING
-   # Output: +PONG
+   redis-cli -p 6379 GET user:1
+   # Output: "yudha"
+
+   # Atomic counters
+   redis-cli -p 6379 SET counter 10
+   redis-cli -p 6379 INCR counter
+   # Output: (integer) 11
+
+   # Expiration and TTL
+   redis-cli -p 6379 EXPIRE counter 60
+   # Output: (integer) 1
+
+   redis-cli -p 6379 TTL counter
+   # Output: (integer) 58
    ```
 
 ---
 
 ## Roadmap
 
-- [ ] In-memory thread-safe state storage (`Arc<RwLock<HashMap<String, Bytes>>>`)
-- [ ] Key expiration and TTL background cleaner
+- [x] In-memory thread-safe state storage (`tokio::sync::RwLock<HashMap<String, Entry>>`)
+- [x] Atomic integer operations (`INCR`, `DECR`)
+- [x] Key expiration and TTL with passive/lazy cleanup
+- [ ] Active background TTL cleaner task for stale keys
 - [ ] Append-Only File (AOF) persistence logging
-- [ ] Performance benchmarking using standard redis-benchmark suites
+- [ ] Performance benchmarking using `redis-benchmark`
 
 ---
 
