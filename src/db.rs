@@ -47,4 +47,26 @@ impl Db {
         }
         count
     }
+
+    pub async fn incr(&self, key: String) -> Result<i64, &'static str> {
+        let mut map = self.entries.write().await;
+        let val_str = map.entry(key).or_insert_with(|| "0".to_string());
+        let mut num: i64 = val_str
+            .parse()
+            .map_err(|_| "value is not an integer or out of range")?;
+        num += 1;
+        *val_str = num.to_string();
+        Ok((num))
+    }
+
+    pub async fn decr(&self, key: String) -> Result<i64, &'static str> {
+        let mut map = self.entries.write().await;
+        let val_str = map.entry(key).or_insert_with(|| "0".to_string());
+        let mut num: i64 = val_str
+            .parse()
+            .map_err(|_| "value is not an integer or out of range")?;
+        num -= 1;
+        *val_str = num.to_string();
+        Ok(num)
+    }
 }

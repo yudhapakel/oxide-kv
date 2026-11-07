@@ -94,6 +94,32 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                             Value::Integer((count))
                         }
                     }
+                    "INCR" => {
+                        if args.len() != 2 {
+                            Value::Error(
+                                ("wrong number of arguments for 'incr' command".to_string()),
+                            )
+                        } else {
+                            let key = args[1].clone();
+                            match db.incr(key).await {
+                                Ok(val) => Value::Integer((val)),
+                                Err(err) => Value::Error((err.to_string())),
+                            }
+                        }
+                    }
+                    "DECR" => {
+                        if args.len() != 2 {
+                            Value::Error(
+                                ("wrong number of arguments for 'decr' command".to_string()),
+                            )
+                        } else {
+                            let key = args[1].clone();
+                            match db.decr(key).await {
+                                Ok(val) => Value::Integer((val)),
+                                Err(err) => Value::Error((err.to_string())),
+                            }
+                        }
+                    }
                     _ => Value::Error(format!("unknown command '{}'", cmd)),
                 }
             }
