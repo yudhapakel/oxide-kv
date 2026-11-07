@@ -120,6 +120,29 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                             }
                         }
                     }
+                    "EXPIRE" => {
+                        if args.len() != 3 {
+                            Value::Error(("wrong arguments of for  'expire' command".to_string()))
+                        } else {
+                            let key = &args[1];
+                            match args[2].parse::<u64>() {
+                                Ok(sec) => Value::Integer((db.expire(key, sec).await)),
+                                Err(_) => Value::Error(
+                                    ("valure is not an integer or out of range".to_string()),
+                                ),
+                            }
+                        }
+                    }
+                    "TTL" => {
+                        if args.len() != 2 {
+                            Value::Error(
+                                ("wrong number of arguments for 'ttl' command".to_string()),
+                            )
+                        } else {
+                            let key = &args[1];
+                            Value::Integer((db.ttl(key).await))
+                        }
+                    }
                     _ => Value::Error(format!("unknown command '{}'", cmd)),
                 }
             }
