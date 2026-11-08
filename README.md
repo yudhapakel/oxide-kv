@@ -11,17 +11,19 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 
 ## Overview
 
-`oxide-kv` is an educational systems programming project designed to explore low-level asynchronous networking, protocol parsing, thread-safe data structures, and in-memory storage mechanisms. It implements a core subset of Redis commands, featuring non-blocking I/O, concurrent read-write access via `tokio::sync::RwLock`, atomic arithmetic mutations, and passive key expiration.
+`oxide-kv` is an educational systems programming project designed to explore low-level asynchronous networking, protocol parsing, thread-safe data structures, and persistent storage mechanisms. It implements a core subset of Redis commands, featuring non-blocking I/O, concurrent read-write access via `tokio::sync::RwLock`, atomic arithmetic mutations, active and passive key expiration, and durable Append-Only File (AOF) persistence.
 
 ---
 
 ## Features
 
 - **Asynchronous Network Engine:** Built on `tokio` for efficient, non-blocking TCP connection handling and task scheduling.
-- **RESP Protocol Parser:** Zero-copy byte buffer parser supporting Redis Serialization Protocol primitives (Simple Strings, Errors, Integers, Bulk Strings, and Arrays).
+- **RESP Protocol Parser:** Zero-copy byte buffer parser supporting Redis Serialization Protocol primitives (Simple Strings, Errors, Integers, Bulk Strings, Arrays, and Null values).
 - **Concurrent Storage:** Thread-safe state managed by `tokio::sync::RwLock<HashMap<String, Entry>>`, enabling safe concurrent reads and serialized writes.
 - **Atomic Operations:** Integer arithmetic (`INCR` and `DECR`) with range validation and RESP-compliant integer replies.
-- **Passive Key Expiration:** Time-To-Live (TTL) tracking with lazy eviction during key access, minimizing CPU overhead while preventing stale reads.
+- **Key Expiration & Active Reaper:** Hybrid expiration model featuring passive eviction during access and an active background task that periodically purges expired keys.
+- **AOF Persistence:** Append-Only File logging for state mutations, providing crash recovery and startup state replay.
+- **Bulk & Admin Operations:** Support for multi-key queries (`MGET`, `MSET`) and administrative tasks (`DBSIZE`, `FLUSHDB`).
 - **Client Compatibility:** Fully interoperable with standard Redis clients such as `redis-cli`, network utilities (`nc`, `telnet`), and official Redis SDKs.
 
 ---
@@ -44,14 +46,20 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 +-----------+-----------+
             | (Command Dispatch)
             v
++-----------------------+         +-----------------------+
+|  Storage Engine (Db)  | <-----> | Active Reaper Task    |
+|  - In-Memory State    |         | (Periodic 500ms Tick) |
++-----------+-----------+         +-----------------------+
+            |
+            | (Mutations logged)
+            v
 +-----------------------+
-|  Storage Engine (Db)  |  <-- tokio::sync::RwLock<HashMap<String, Entry>>
-|  - Passive Expiration |  <-- Validates expires_at (Instant)
+|    AOF Persistence    |  <-- appendonly.aof (Startup Replay & Sync)
 +-----------+-----------+
             | (Execution Result)
             v
 +-----------------------+
-|    RESP Serializer    |  <-- Encodes to RESP Frame (+OK, :Int, $Bulk, etc.)
+|    RESP Serializer    |  <-- Encodes to RESP Frame (+OK, :Int, $Bulk, *Arr)
 +-----------------------+
 ```
 
@@ -70,6 +78,10 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 | **DECR** | `DECR <key>` | Atomically decrements 64-bit signed integer value by 1. |
 | **EXPIRE** | `EXPIRE <key> <seconds>` | Sets timeout on a key in seconds. |
 | **TTL** | `TTL <key>` | Returns remaining seconds until expiration (-1: persistent, -2: not found). |
+| **MSET** | `MSET <k1> <v1> ...` | Sets multiple key-value pairs atomically. |
+| **MGET** | `MGET <k1> <k2> ...` | Returns values for multiple keys in an array. |
+| **DBSIZE** | `DBSIZE` | Returns the total count of active, unexpired keys. |
+| **FLUSHDB** | `FLUSHDB` | Removes all keys from the database. |
 
 ---
 
@@ -117,6 +129,17 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 
    redis-cli -p 6379 TTL counter
    # Output: (integer) 58
+
+   # Bulk operations
+   redis-cli -p 6379 MSET a 1 b 2 c 3
+   # Output: OK
+
+   redis-cli -p 6379 MGET a b c
+   # Output: 1) "1" 2) "2" 3) "3"
+
+   # Database inspection
+   redis-cli -p 6379 DBSIZE
+   # Output: (integer) 4
    ```
 
 ---
@@ -126,8 +149,10 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 - [x] In-memory thread-safe state storage (`tokio::sync::RwLock<HashMap<String, Entry>>`)
 - [x] Atomic integer operations (`INCR`, `DECR`)
 - [x] Key expiration and TTL with passive/lazy cleanup
-- [ ] Active background TTL cleaner task for stale keys
-- [ ] Append-Only File (AOF) persistence logging
+- [x] Active background TTL cleaner task for stale keys
+- [x] Append-Only File (AOF) persistence logging and startup replay
+- [x] Bulk operations (`MSET`, `MGET`) and administrative commands (`DBSIZE`, `FLUSHDB`)
+- [ ] Active key eviction policies (LRU/LFU memory limits)
 - [ ] Performance benchmarking using `redis-benchmark`
 
 ---
