@@ -4,6 +4,7 @@ use db::Db;
 use resp::{Value, parse_command};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::{Duration, interval};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,6 +13,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("oxide-kv server listening on {}", addr);
 
     let db = Db::new();
+
+    let reaper_db = db.clone();
+    tokio::spawn(async move {
+        let mut ticker = interval(Duration::from_millis(500));
+        loop {
+            ticker.tick().await;
+            let purged = reaper_db.purge_expired().await;
+            if purged > 0 {
+                println!("[reaper] Purged {} expired key(s) from memory", purged);
+            }
+        }
+    });
 
     loop {
         let (socket, client_addr) = listener.accept().await?;

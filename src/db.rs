@@ -167,4 +167,14 @@ impl Db {
             -2
         }
     }
+
+    pub async fn purge_expired(&self) -> usize {
+        let mut map = self.entries.write().await;
+        let before_count = map.len();
+
+        map.retain(|_, entry| !entry.is_expired());
+
+        let removed = before_count - map.len();
+        removed
+    }
 }
