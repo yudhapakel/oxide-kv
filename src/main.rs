@@ -194,6 +194,45 @@ async fn handle_client(
                             Value::Integer((db.ttl(key).await))
                         }
                     }
+                    "DBSIZE" => Value::Integer(db.dbsize().await),
+                    "FLUSHDB" => {
+                        db.flushdb().await;
+                        let _ = aof.append_command(&args).await;
+                        Value::SimpleString(("OK".to_string()))
+                    }
+                    "MSET" => {
+                        if args.len() < 3 || (args.len() - 1) % 2 != 0 {
+                            Value::Error("wrong number of arguments for 'mset' command".to_string())
+                        } else {
+                            let mut pairs = Vec::new();
+                            let mut i = 1;
+                            while i < args.len() {
+                                pairs.push((args[i].clone(), args[i + 1].clone()));
+                                i += 2;
+                            }
+                            db.mset(&pairs).await;
+                            let _ = aof.append_command(&args).await;
+                            Value::SimpleString("OK".to_string())
+                        }
+                    }
+                    "MGET" => {
+                        if args.len() < 2 {
+                            Value::Error(
+                                ("wrong number of arguments for 'mget' command".to_string()),
+                            )
+                        } else {
+                            let keys = &args[1..];
+                            let values = db.mget(keys).await;
+                            let resp_items = values
+                                .into_iter()
+                                .map(|v| match v {
+                                    Some(val) => Value::BulkString((val)),
+                                    None => Value::Null,
+                                })
+                                .collect();
+                            Value::Array((resp_items))
+                        }
+                    }
                     _ => Value::Error(format!("unknown command '{}'", cmd)),
                 }
             }

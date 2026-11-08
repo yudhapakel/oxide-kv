@@ -80,6 +80,10 @@ impl Aof {
                         count += 1;
                     }
                 }
+                "FLUSHDB" => {
+                    db.flushdb().await;
+                    count += 1;
+                }
                 _ => {}
             }
         }

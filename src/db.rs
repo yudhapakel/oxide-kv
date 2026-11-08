@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+use crate::db;
+
 #[derive(Clone)]
 struct Entry {
     value: String,
@@ -176,5 +178,48 @@ impl Db {
 
         let removed = before_count - map.len();
         removed
+    }
+
+    pub async fn dbsize(&self) -> i64 {
+        let mut map = self.entries.write().await;
+        map.retain(|_, entry| !entry.is_expired());
+        map.len() as i64
+    }
+
+    pub async fn flushdb(&self) {
+        let mut map = self.entries.write().await;
+        map.clear();
+    }
+
+    pub async fn mset(&self, pairs: &[(String, String)]) {
+        let mut map = self.entries.write().await;
+        for (k, v) in pairs {
+            map.insert(
+                k.clone(),
+                Entry {
+                    value: v.clone(),
+                    expires_at: None,
+                },
+            );
+        }
+    }
+
+    pub async fn mget(&self, keys: &[String]) -> Vec<Option<String>> {
+        let mut map = self.entries.write().await;
+        let mut results = Vec::with_capacity(keys.len());
+
+        for key in keys {
+            if let Some(entry) = map.get(key) {
+                if entry.is_expired() {
+                    map.remove(key);
+                    results.push(None);
+                } else {
+                    results.push(Some((entry.value.clone())));
+                }
+            } else {
+                results.push(None);
+            }
+        }
+        results
     }
 }
