@@ -1,5 +1,7 @@
+mod aof;
 mod db;
 mod resp;
+use aof::Aof;
 use db::Db;
 use resp::{Value, parse_command};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -8,11 +10,22 @@ use tokio::time::{Duration, interval};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:6379";
-    let listener = TcpListener::bind(addr).await?;
-    println!("oxide-kv server listening on {}", addr);
-
+    let aof_path = "appendonly.aof";
     let db = Db::new();
+
+    match Aof::load(aof_path, &db).await {
+        Ok(count) if count > 0 => {
+            println!("[aof] Replayed {} mutation(s) from {}", count, aof_path);
+        }
+        Ok(_) => {
+            println!("[aof] No previous state found or file empty");
+        }
+        Err(e) => {
+            eprintln!("[aof] Error loading {}: {:?}", aof_path, e);
+        }
+    }
+
+    let aof = Aof::new(aof_path).await?;
 
     let reaper_db = db.clone();
     tokio::spawn(async move {
@@ -26,21 +39,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
+    let addr = "127.0.0.1:6379";
+    let listener = TcpListener::bind(addr).await?;
+    println!("oxide-kv server listening on {}", addr);
+
     loop {
         let (socket, client_addr) = listener.accept().await?;
         println!("Client connected: {}", client_addr);
 
         let db_clone = db.clone();
+        let aof_clone = aof.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, db_clone).await {
+            if let Err(e) = handle_client(socket, db_clone, aof_clone).await {
                 eprintln!(" Connection error: {:?}", e);
             }
         });
     }
 }
 
-async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_client(
+    mut socket: TcpStream,
+    db: Db,
+    aof: Aof,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut buffer = [0; 512];
 
     loop {
@@ -69,7 +91,8 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                             let key = args[1].clone();
                             let value = args[2].clone();
                             db.set(key, value).await;
-                            Value::SimpleString(("OK".to_string()))
+                            let _ = aof.append_command(&args).await;
+                            Value::SimpleString("OK".to_string())
                         }
                     }
                     "GET" => {
@@ -93,7 +116,10 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                         } else {
                             let keys = &args[1..];
                             let deleted = db.del(keys).await;
-                            Value::Integer((deleted))
+                            if deleted > 0 {
+                                let _ = aof.append_command(&args).await;
+                            }
+                            Value::Integer(deleted)
                         }
                     }
                     "EXISTS" => {
@@ -115,8 +141,11 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                         } else {
                             let key = args[1].clone();
                             match db.incr(key).await {
-                                Ok(val) => Value::Integer((val)),
-                                Err(err) => Value::Error((err.to_string())),
+                                Ok(val) => {
+                                    let _ = aof.append_command(&args).await;
+                                    Value::Integer(val)
+                                }
+                                Err(err) => Value::Error(err.to_string()),
                             }
                         }
                     }
@@ -128,8 +157,11 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                         } else {
                             let key = args[1].clone();
                             match db.decr(key).await {
-                                Ok(val) => Value::Integer((val)),
-                                Err(err) => Value::Error((err.to_string())),
+                                Ok(val) => {
+                                    let _ = aof.append_command(&args).await;
+                                    Value::Integer(val)
+                                }
+                                Err(err) => Value::Error(err.to_string()),
                             }
                         }
                     }
@@ -139,9 +171,15 @@ async fn handle_client(mut socket: TcpStream, db: Db) -> Result<(), Box<dyn std:
                         } else {
                             let key = &args[1];
                             match args[2].parse::<u64>() {
-                                Ok(sec) => Value::Integer((db.expire(key, sec).await)),
+                                Ok(sec) => {
+                                    let res = db.expire(key, sec).await;
+                                    if res == 1 {
+                                        let _ = aof.append_command(&args).await;
+                                    }
+                                    Value::Integer(res)
+                                }
                                 Err(_) => Value::Error(
-                                    ("valure is not an integer or out of range".to_string()),
+                                    "value is not an integer or out of range".to_string(),
                                 ),
                             }
                         }
