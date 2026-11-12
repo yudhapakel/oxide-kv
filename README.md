@@ -18,12 +18,12 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 ## Features
 
 - **Asynchronous Network Engine:** Built on `tokio` for efficient, non-blocking TCP connection handling and task scheduling.
-- **RESP Protocol Parser:** Zero-copy byte buffer parser supporting Redis Serialization Protocol primitives (Simple Strings, Errors, Integers, Bulk Strings, Arrays, and Null values).
+- **RESP Protocol Parser & Framing:** Streaming byte-buffer parser (`BytesMut`) supporting pipelined frames, inline quoted arguments, and RESP primitives (Simple Strings, Errors, Integers, Bulk Strings, Arrays, and Null values).
 - **Concurrent Storage:** Thread-safe state managed by `tokio::sync::RwLock<HashMap<String, Entry>>`, enabling safe concurrent reads and serialized writes.
 - **Atomic Operations:** Integer arithmetic (`INCR` and `DECR`) with range validation and RESP-compliant integer replies.
-- **Key Expiration & Active Reaper:** Hybrid expiration model featuring passive eviction during access and an active background task that periodically purges expired keys.
-- **AOF Persistence:** Append-Only File logging for state mutations, providing crash recovery and startup state replay.
-- **Bulk & Admin Operations:** Support for multi-key queries (`MGET`, `MSET`) and administrative tasks (`DBSIZE`, `FLUSHDB`).
+- **Key Expiration & Active Reaper:** Hybrid expiration model featuring passive eviction during access, atomic `SET ... EX`, `PERSIST`, and an active background task that periodically purges expired keys.
+- **AOF Persistence:** Append-Only File logging for state mutations (including `MSET`, `SET ... EX`, `PERSIST`, and quoted values), providing crash recovery and startup state replay.
+- **Bulk & Admin Operations:** Support for multi-key queries (`MGET`, `MSET`), pattern inspection (`KEYS`), and administrative tasks (`DBSIZE`, `FLUSHDB`).
 - **Client Compatibility:** Fully interoperable with standard Redis clients such as `redis-cli`, network utilities (`nc`, `telnet`), and official Redis SDKs.
 
 ---
@@ -70,14 +70,16 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 | Command | Syntax | Description |
 |---|---|---|
 | **PING** | `PING [message]` | Tests server liveness or echoes back an argument. |
-| **SET** | `SET <key> <value>` | Sets string value for a key. |
+| **SET** | `SET <key> <value> [EX seconds]` | Sets string value for a key with optional expiration in seconds. |
 | **GET** | `GET <key>` | Returns string value or nil if not found / expired. |
 | **DEL** | `DEL <key> ...` | Deletes one or more keys; returns deleted count. |
 | **EXISTS** | `EXISTS <key> ...` | Returns count of existing, unexpired keys. |
 | **INCR** | `INCR <key>` | Atomically increments 64-bit signed integer value by 1. |
 | **DECR** | `DECR <key>` | Atomically decrements 64-bit signed integer value by 1. |
 | **EXPIRE** | `EXPIRE <key> <seconds>` | Sets timeout on a key in seconds. |
+| **PERSIST** | `PERSIST <key>` | Removes existing expiration timeout from a key. |
 | **TTL** | `TTL <key>` | Returns remaining seconds until expiration (-1: persistent, -2: not found). |
+| **KEYS** | `KEYS <pattern>` | Returns all unexpired keys matching a glob pattern (`*`, `?`). |
 | **MSET** | `MSET <k1> <v1> ...` | Sets multiple key-value pairs atomically. |
 | **MGET** | `MGET <k1> <k2> ...` | Returns values for multiple keys in an array. |
 | **DBSIZE** | `DBSIZE` | Returns the total count of active, unexpired keys. |
@@ -123,12 +125,16 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
    redis-cli -p 6379 INCR counter
    # Output: (integer) 11
 
-   # Expiration and TTL
-   redis-cli -p 6379 EXPIRE counter 60
+   # Expiration, PERSIST, and pattern lookup
+   redis-cli -p 6379 SET session:abc "active" EX 60
+   redis-cli -p 6379 TTL session:abc
+   # Output: (integer) 59
+
+   redis-cli -p 6379 PERSIST session:abc
    # Output: (integer) 1
 
-   redis-cli -p 6379 TTL counter
-   # Output: (integer) 58
+   redis-cli -p 6379 KEYS "session:*"
+   # Output: 1) "session:abc"
 
    # Bulk operations
    redis-cli -p 6379 MSET a 1 b 2 c 3
@@ -152,6 +158,8 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 - [x] Active background TTL cleaner task for stale keys
 - [x] Append-Only File (AOF) persistence logging and startup replay
 - [x] Bulk operations (`MSET`, `MGET`) and administrative commands (`DBSIZE`, `FLUSHDB`)
+- [x] Streaming RESP framing (`BytesMut`), bugfixes, and unit test suite (`cargo test`)
+- [x] `SET ... EX`, `PERSIST`, and glob `KEYS` support
 - [ ] Active key eviction policies (LRU/LFU memory limits)
 - [ ] Performance benchmarking using `redis-benchmark`
 
