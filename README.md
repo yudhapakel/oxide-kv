@@ -4,6 +4,8 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Tokio](https://img.shields.io/badge/Runtime-Tokio-brightgreen.svg?style=flat-square)](https://tokio.rs/)
 [![Protocol](https://img.shields.io/badge/Protocol-RESP-red.svg?style=flat-square)](https://redis.io/docs/reference/protocol-spec/)
+[![Status](https://img.shields.io/badge/Status-In%20Progress-yellow.svg?style=flat-square)](https://github.com/yudhapakel/oxide-kv)
+[![Milestone](https://img.shields.io/badge/Milestone-4%20(LRU%2FLFU%20Eviction)-orange.svg?style=flat-square)](https://github.com/yudhapakel/oxide-kv)
 
 A lightweight, concurrent, in-memory key-value storage engine implementing the Redis Serialization Protocol (RESP), built from scratch in Rust using the Tokio asynchronous runtime.
 
@@ -160,8 +162,10 @@ A lightweight, concurrent, in-memory key-value storage engine implementing the R
 - [x] Bulk operations (`MSET`, `MGET`) and administrative commands (`DBSIZE`, `FLUSHDB`)
 - [x] Streaming RESP framing (`BytesMut`), bugfixes, and unit test suite (`cargo test`)
 - [x] `SET ... EX`, `PERSIST`, and glob `KEYS` support
-- [ ] Active key eviction policies (LRU/LFU memory limits)
+- [ ] **🚧 IN PROGRESS: Milestone 4 — Active key eviction policies (LRU/LFU memory limits)**
 - [ ] Performance benchmarking using `redis-benchmark`
+- [ ] Redis-compatible replication (leader/follower sync)
+- [ ] Pub/Sub support (`SUBSCRIBE`, `PUBLISH`, `UNSUBSCRIBE`)
 
 ---
 
