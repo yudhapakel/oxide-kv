@@ -92,6 +92,7 @@ In-memory key-value data store implementing the Redis Serialization Protocol (RE
 ### Prerequisites
 
 - Rust toolchain (`cargo` & `rustc` 1.75+)
+- (Optional) `redis-cli` for testing client interactions
 
 ### Building and Running
 
